@@ -77,10 +77,36 @@ export default function Home() {
       console.log("Convert success:", result);
 
       // 可以視情況更新 rows
-      alert(`ID ${id} convert success`);
+      loadData();
     } catch (err) {
       console.error("Convert failed:", err);
       alert(`ID ${id} convert failed`);
+    }
+  };
+
+  // 🔹 convert function
+  const handleClear = async (id: number) => {
+    try {
+      const res = await fetch(`http://127.0.0.1:5000/clear`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status}`);
+      }
+
+      const result = await res.json();
+      console.log("Clear success:", result);
+
+      // 可以視情況更新 rows
+      loadData();
+    } catch (err) {
+      console.error("clear failed:", err);
+      alert(`ID ${id} clear failed`);
     }
   };
 
@@ -195,13 +221,14 @@ export default function Home() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleConvert(row.id)} // 綁定 row.id
+                      onClick={() => handleConvert(row.id)}
                       className="text-white bg-blue-700 hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-300 font-medium rounded-full text-sm px-5 py-2.5 text-center me-2 mb-2"
                     >
                       convert
                     </button>
                     <button
                       type="button"
+                      onClick={() => handleClear(row.id)}
                       className="text-white bg-red-500 hover:bg-red-800 focus:outline-none focus:ring-4 focus:ring-red-300 font-medium rounded-full text-sm px-5 py-2.5 text-center me-2 mb-2 dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-800"
                     >
                       clear

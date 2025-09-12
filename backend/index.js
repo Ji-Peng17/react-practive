@@ -91,6 +91,66 @@ app.get("/image/:id", (req, res) => {
   });
 });
 
+// PUT 方法：清除
+app.put("/clear", (req, res) => {
+  const { id } = req.body;
+
+  // 檢查是否有傳入 id
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      message: "請提供檔案 ID",
+    });
+  }
+
+  // 查詢取得 target_path
+  const selectQuery = "SELECT target_path FROM file_list WHERE id = ?";
+
+  db.query(selectQuery, [id], (err, results) => {
+    if (err) {
+      return res.status(500).json({ error: "查詢失敗" });
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ error: "找不到記錄" });
+    }
+
+    const targetPath = results[0].target_path;
+
+    if (!targetPath) {
+      return res.json({ success: true, message: "已經是清除狀態" });
+    }
+
+    // 刪除實體文件
+    const fs = require("fs");
+    const path = require("path");
+    const fullPath = path.join(__dirname, "public", targetPath);
+
+    if (fs.existsSync(targetPath)) {
+      try {
+        fs.unlinkSync(targetPath);
+      } catch (deleteErr) {
+        console.error("文件刪除失敗:", deleteErr);
+      }
+    }
+
+    // 更新 target_path 為 null
+    const updateQuery = "UPDATE file_list SET target_path = NULL WHERE id = ?";
+
+    db.query(updateQuery, [id], (updateErr) => {
+      if (updateErr) {
+        return res.status(500).json({ error: "更新失敗" });
+      }
+
+      res.json({
+        success: true,
+        message: "清除完成",
+        id: id,
+      });
+    });
+  });
+});
+
 // POST API 端點 - 同步檔案與資料庫
 app.post("/sync_files", async (req, res) => {
   try {
