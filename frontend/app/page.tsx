@@ -2,6 +2,12 @@
 
 import { useEffect, useState } from "react";
 
+interface Search {
+  name: string;
+  class: string;
+  prompt: string;
+  file_name: string;
+}
 interface TableRow {
   id: number;
   name: string;
@@ -26,6 +32,12 @@ interface ImgDia {
 }
 
 export default function Home() {
+  const [search, setSearch] = useState<Search>({
+    name: "",
+    class: "",
+    prompt: "",
+    file_name: "",
+  });
   const [rows, setRows] = useState<TableRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState(false);
@@ -45,9 +57,18 @@ export default function Home() {
     loadData();
   }, []);
 
+  const updateSearch = (key: keyof Search, value: string | number | File) => {
+    setSearch((prev) => ({ ...prev, [key]: value }));
+  };
+
   const loadData = () => {
     setLoading(true);
-    fetch("http://127.0.0.1:5000/api/file_list")
+
+    const query = new URLSearchParams(
+      Object.fromEntries(Object.entries(search).filter(([_, v]) => v !== ""))
+    ).toString();
+
+    fetch(`http://127.0.0.1:5000/api/file_list?${query}`)
       .then((res) => res.json())
       .then((data) => {
         setRows(data);
@@ -167,7 +188,53 @@ export default function Home() {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-bold mb-6">資料表</h1>
+      <div className="flex items-stretch">
+        <div className="my-2 mx-2 bg-cyan-300 rounded-md shadow-lg px-8 py-4">
+          <span className="text-xl font-bold">name</span>
+          <input
+            type="text"
+            className="bg-white w-full p-1"
+            value={search.name}
+            onChange={(e) => updateSearch("name", e.target.value)}
+          />
+        </div>
+        <div className="my-2 mx-2 bg-cyan-300 rounded-md shadow-lg px-8 py-4">
+          <span className="text-xl font-bold">class</span>
+          <input
+            type="text"
+            className="bg-white w-full p-1"
+            value={search.class}
+            onChange={(e) => updateSearch("class", e.target.value)}
+          />
+        </div>
+        <div className="my-2 mx-2 bg-cyan-300 rounded-md shadow-lg px-8 py-4">
+          <span className="text-xl font-bold">prompt</span>
+          <input
+            type="text"
+            className="bg-white w-full p-1"
+            value={search.prompt}
+            onChange={(e) => updateSearch("prompt", e.target.value)}
+          />
+        </div>
+        <div className="my-2 mx-2 bg-cyan-300 rounded-md shadow-lg px-8 py-4">
+          <span className="text-xl font-bold">file_name</span>
+          <input
+            type="text"
+            className="bg-white w-full p-1"
+            value={search.file_name}
+            onChange={(e) => updateSearch("file_name", e.target.value)}
+          />
+        </div>
+        <div className="flex items-center ">
+          <button
+            type="button"
+            onClick={() => loadData()}
+            className="text-white bg-sky-500 hover:bg-sky-800 focus:outline-none focus:ring-4 focus:ring-sky-300 font-medium rounded-full text-sm px-5 py-2.5 text-center me-2 mb-2 dark:bg-sky-600 dark:hover:bg-sky-700 dark:focus:ring-sky-800 cursor-pointer"
+          >
+            search
+          </button>
+        </div>
+      </div>
 
       {loading ? (
         <div className="text-gray-500">讀取中...</div>

@@ -44,13 +44,39 @@ app.get("/api/t_table", (req, res) => {
 });
 
 app.get("/api/file_list", (req, res) => {
-  db.query(
-    "SELECT *, CASE WHEN image IS NOT NULL THEN 1 ELSE 0 END AS img_exist FROM file_list",
-    (err, results) => {
-      if (err) return res.status(500).json(err);
-      res.json(results);
-    }
-  );
+  const { name, class: className, prompt, file_name } = req.query; // 從 query string 接收條件
+
+  let sql = `
+    SELECT *, CASE WHEN image IS NOT NULL THEN 1 ELSE 0 END AS img_exist
+    FROM file_list
+    WHERE 1=1
+  `;
+  const params = [];
+
+  if (name && name.trim() !== "") {
+    sql += " AND name LIKE ?";
+    params.push(`%${name}%`);
+  }
+
+  if (className && className.trim() !== "") {
+    sql += " AND class LIKE ?";
+    params.push(`%${className}%`);
+  }
+
+  if (prompt && prompt.trim() !== "") {
+    sql += " AND prompt LIKE ?";
+    params.push(`%${prompt}%`);
+  }
+
+  if (file_name && file_name.trim() !== "") {
+    sql += " AND file_name LIKE ?";
+    params.push(`%${file_name}%`);
+  }
+
+  db.query(sql, params, (err, results) => {
+    if (err) return res.status(500).json(err);
+    res.json(results);
+  });
 });
 
 //根據 ID 獲取圖片路徑
