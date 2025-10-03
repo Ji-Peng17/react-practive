@@ -1,10 +1,15 @@
-const express = require("express");
-const mysql = require("mysql2");
-const cors = require("cors");
-const fs = require("fs");
-const path = require("path");
-const multer = require("multer");
-const _ = require("lodash");
+import express from "express";
+import mysql from "mysql2/promise";
+import cors from "cors";
+import fs from "fs";
+import path from "path";
+import multer from "multer";
+import _ from "lodash";
+import { fileURLToPath } from "url";
+
+// __dirname 在 ESM 中沒有，需要自己模擬
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
@@ -14,7 +19,7 @@ app.use(express.json());
 app.use("/static", express.static(path.join(__dirname, "public")));
 
 // 連線 MySQL
-const db = mysql.createConnection({
+const db = await mysql.createConnection({
   host: "127.0.0.1",
   user: "sa", // 根據你的 phpMyAdmin 帳號
   password: "sun", // 如果有密碼要填
@@ -36,145 +41,93 @@ app.get("/api/hello", (req, res) => {
 });
 
 // 查詢 MySQL 測試
-app.get("/api/t_table", (req, res) => {
-  db.query("SELECT * FROM t_table", (err, results) => {
-    if (err) return res.status(500).json(err);
-    res.json(results);
-  });
+app.get("/api/t_table", async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM t_table");
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get("/api/file_list", (req, res) => {
-  const { name, class: className, prompt, file_name } = req.query; // 從 query string 接收條件
+app.get("/api/file_list", async (req, res) => {
+  try {
+    const { name, class: className, prompt, file_name } = req.query; // 從 query string 接收條件
 
-  let sql = `
-    SELECT *, CASE WHEN image IS NOT NULL THEN 1 ELSE 0 END AS img_exist
+    let sql = `
+    SELECT *, CASE WHEN 1 = 1 THEN 1 ELSE 0 END AS img_exist
     FROM file_list
     WHERE 1=1
   `;
-  const params = [];
+    const params = [];
 
-  if (name && name.trim() !== "") {
-    sql += " AND name LIKE ?";
-    params.push(`%${name}%`);
+    if (name && name.trim() !== "") {
+      sql += " AND name LIKE ?";
+      params.push(`%${name}%`);
+    }
+
+    if (className && className.trim() !== "") {
+      sql += " AND class LIKE ?";
+      params.push(`%${className}%`);
+    }
+
+    if (prompt && prompt.trim() !== "") {
+      sql += " AND prompt LIKE ?";
+      params.push(`%${prompt}%`);
+    }
+
+    if (file_name && file_name.trim() !== "") {
+      sql += " AND file_name LIKE ?";
+      params.push(`%${file_name}%`);
+    }
+    const [rows] = await db.query(sql, params);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  if (className && className.trim() !== "") {
-    sql += " AND class LIKE ?";
-    params.push(`%${className}%`);
-  }
-
-  if (prompt && prompt.trim() !== "") {
-    sql += " AND prompt LIKE ?";
-    params.push(`%${prompt}%`);
-  }
-
-  if (file_name && file_name.trim() !== "") {
-    sql += " AND file_name LIKE ?";
-    params.push(`%${file_name}%`);
-  }
-
-  db.query(sql, params, (err, results) => {
-    if (err) return res.status(500).json(err);
-    res.json(results);
-  });
 });
 
 //根據 ID 獲取圖片路徑
-app.get("/image/:id", (req, res) => {
-  const reqId = req.params.id;
+app.get("/image/:id", async (req, res) => {
+  try {
+    const reqId = req.params.id;
 
-  // 查詢數據庫獲取圖片路徑
-  const query = "SELECT image FROM file_list WHERE id = ?";
-
-  db.query(query, [reqId], (err, results) => {
-    if (err) {
-      console.error("數據庫查詢錯誤:", err);
-      return res.status(500).json({ error: "服務器錯誤" });
-    }
+    const [results] = await db.query(
+      "SELECT image FROM file_image WHERE file_list_id = ?",
+      [reqId]
+    );
 
     if (results.length === 0) {
       return res.status(404).json({ error: "圖片不存在" });
     }
 
-    const imagePath = results[0].image;
+    const images = results
+      .map((row) => {
+        const imagePath = row.image;
+        const fullPath = path.join(__dirname, "public", imagePath);
 
-    // 檢查文件是否存在
-    const fullPath = path.join(__dirname, "public", imagePath);
-    const fs = require("fs");
+        if (!fs.existsSync(fullPath)) return null;
 
-    if (!fs.existsSync(fullPath)) {
+        const imageUrl = `/static/${imagePath}`;
+        return {
+          imageUrl,
+          fullUrl: `${req.protocol}://${req.get("host")}${imageUrl}`,
+        };
+      })
+      .filter(Boolean);
+
+    if (images.length === 0) {
       return res.status(404).json({ error: "圖片文件不存在" });
     }
 
-    // 返回可供前端使用的 URL
-    const imageUrl = `/static/${imagePath}`;
-
     res.json({
       success: true,
-      imageUrl: imageUrl,
-      fullUrl: `${req.protocol}://${req.get("host")}${imageUrl}`,
+      images,
     });
-  });
-});
-
-// PUT 方法：清除
-app.put("/clear", (req, res) => {
-  const { id } = req.body;
-
-  // 檢查是否有傳入 id
-  if (!id) {
-    return res.status(400).json({
-      success: false,
-      message: "請提供檔案 ID",
-    });
+  } catch (err) {
+    console.error("資料庫錯誤:", err);
+    res.status(500).json({ error: "伺服器錯誤" });
   }
-
-  // 查詢取得 target_path
-  const selectQuery = "SELECT target_path FROM file_list WHERE id = ?";
-
-  db.query(selectQuery, [id], (err, results) => {
-    if (err) {
-      return res.status(500).json({ error: "查詢失敗" });
-    }
-
-    if (results.length === 0) {
-      return res.status(404).json({ error: "找不到記錄" });
-    }
-
-    const targetPath = results[0].target_path;
-
-    if (!targetPath) {
-      return res.json({ success: true, message: "已經是清除狀態" });
-    }
-
-    // 刪除實體文件
-    const fs = require("fs");
-    const path = require("path");
-    const fullPath = path.join(__dirname, "public", targetPath);
-
-    if (fs.existsSync(targetPath)) {
-      try {
-        fs.unlinkSync(targetPath);
-      } catch (deleteErr) {
-        console.error("文件刪除失敗:", deleteErr);
-      }
-    }
-
-    // 更新 target_path 為 null
-    const updateQuery = "UPDATE file_list SET target_path = NULL WHERE id = ?";
-
-    db.query(updateQuery, [id], (updateErr) => {
-      if (updateErr) {
-        return res.status(500).json({ error: "更新失敗" });
-      }
-
-      res.json({
-        success: true,
-        message: "清除完成",
-        id: id,
-      });
-    });
-  });
 });
 
 // POST API 端點 - 同步檔案與資料庫
@@ -211,13 +164,10 @@ app.post("/sync_files", async (req, res) => {
     const filePaths = getAllFiles(FILE_DIRECTORY);
 
     // 查詢現有資料庫中的 origin_path
-    const existingFiles = await new Promise((resolve, reject) => {
-      const query = "SELECT origin_path FROM file_list";
-      db.query(query, (err, results) => {
-        if (err) reject(err);
-        else resolve(results.map((row) => row.origin_path));
-      });
-    });
+    const [existingFilesRows] = await db.query(
+      "SELECT origin_path FROM file_list"
+    );
+    const existingFiles = existingFilesRows.map((row) => row.origin_path);
 
     // 找出需要新增的檔案（資料夾中存在但資料庫中不存在）
     const newFiles = filePaths.filter(
@@ -227,18 +177,13 @@ app.post("/sync_files", async (req, res) => {
     // 批量插入新檔案到資料庫
     if (newFiles.length > 0) {
       const insertQuery =
-        "INSERT INTO file_list (origin_path,file_name, created_at) VALUES ?";
+        "INSERT INTO file_list (origin_path, file_name, created_at) VALUES ?";
       const insertValues = newFiles.map((filePath) => {
         const fileName = path.basename(filePath);
         return [filePath, fileName, new Date()];
       });
 
-      await new Promise((resolve, reject) => {
-        db.query(insertQuery, [insertValues], (err, result) => {
-          if (err) reject(err);
-          else resolve(result);
-        });
-      });
+      await db.query(insertQuery, [insertValues]);
     }
 
     // 檢查資料庫中的檔案是否在實際資料夾中存在，更新 path_check 狀態
@@ -246,18 +191,9 @@ app.post("/sync_files", async (req, res) => {
       const fileExists = fs.existsSync(filePath);
       const pathCheckValue = fileExists ? 1 : 0;
 
-      return new Promise((resolve, reject) => {
-        const updateQuery =
-          "UPDATE file_list SET path_check = ?, updated_at = ? WHERE origin_path = ?";
-        db.query(
-          updateQuery,
-          [pathCheckValue, new Date(), filePath],
-          (err, result) => {
-            if (err) reject(err);
-            else resolve(result);
-          }
-        );
-      });
+      const updateQuery =
+        "UPDATE file_list SET path_check = ?, updated_at = ? WHERE origin_path = ?";
+      return db.query(updateQuery, [pathCheckValue, new Date(), filePath]);
     });
 
     await Promise.all(updatePromises);
@@ -270,16 +206,10 @@ app.post("/sync_files", async (req, res) => {
     };
 
     // 取得遺失檔案的統計
-    const missingFilesCount = await new Promise((resolve, reject) => {
-      const query =
-        "SELECT COUNT(*) as count FROM file_list WHERE path_check = 0";
-      db.query(query, (err, result) => {
-        if (err) reject(err);
-        else resolve(result[0].count);
-      });
-    });
-
-    stats.missingFiles = missingFilesCount;
+    const [missingFilesResult] = await db.query(
+      "SELECT COUNT(*) as count FROM file_list WHERE path_check = 0"
+    );
+    stats.missingFiles = missingFilesResult[0].count;
 
     res.json({
       success: true,
@@ -309,13 +239,8 @@ app.put("/convert", async (req, res) => {
     }
 
     // 查詢資料庫中的 origin_path 和 name
-    const fileData = await new Promise((resolve, reject) => {
-      const query = "SELECT origin_path, name FROM file_list WHERE id = ?";
-      db.query(query, [id], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-      });
-    });
+    let sql = "SELECT origin_path, name FROM file_list WHERE id = ?";
+    const [fileData] = await db.query(sql, [id]);
 
     // 檢查是否找到檔案記錄
     if (fileData.length === 0) {
@@ -350,14 +275,9 @@ app.put("/convert", async (req, res) => {
     // 複製檔案到新位置
     fs.copyFileSync(origin_path, newPath);
 
-    await new Promise((resolve, reject) => {
-      const updateQuery =
-        "UPDATE file_list SET target_path = ?, updated_at = ? WHERE id = ?";
-      db.query(updateQuery, [newPath, new Date(), id], (err, result) => {
-        if (err) reject(err);
-        else resolve(result);
-      });
-    });
+    let u_sql =
+      "UPDATE file_list SET target_path = ?, updated_at = ? WHERE id = ?";
+    await db.query(u_sql, [newPath, new Date(), id]);
 
     // 回傳成功訊息
     res.json({
@@ -388,16 +308,95 @@ app.put("/convert", async (req, res) => {
   }
 });
 
-app.put("/edit", upload.single("image"), async (req, res) => {
+// PUT 方法：清除
+app.put("/clear", async (req, res) => {
   try {
-    const { id, name, prompt } = req.body;
+    const { id } = req.body;
+
+    // 檢查是否有傳入 id
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "請提供檔案 ID",
+      });
+    }
+
+    // 查詢取得 target_path
+    const sql = "SELECT target_path FROM file_list WHERE id = ?";
+
+    const [rows] = await db.query(sql, [id]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "找不到記錄" });
+    }
+
+    const targetPath = rows[0].target_path;
+
+    if (!targetPath) {
+      return res.json({ success: true, message: "已經是清除狀態" });
+    }
+
+    // 刪除實體文件
+    const fullPath = path.join(__dirname, "public", targetPath);
+
+    if (fs.existsSync(targetPath)) {
+      try {
+        fs.unlinkSync(targetPath);
+      } catch (deleteErr) {
+        console.error("文件刪除失敗:", deleteErr);
+      }
+    }
+
+    // 更新 target_path 為 null
+    const u_sql = "UPDATE file_list SET target_path = NULL WHERE id = ?";
+
+    await db.query(u_sql, [id]);
+
+    res.json({
+      success: true,
+      message: "清除完成",
+      id: id,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/edit", async (req, res) => {
+  try {
+    const { id, name, class_name, prompt } = req.body;
+
+    let u_sql = `UPDATE file_list
+      SET name = ?, class = ?, prompt = ?, updated_at = ?
+    WHERE id = ?`;
+    await db.query(u_sql, [name, class_name, prompt, new Date(), id]);
+    const abc = "123";
+
+    return res.json({ success: true, id: abc });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/image", upload.single("image"), async (req, res) => {
+  try {
+    const { file_list_id } = req.body;
     const file = req.file; // multer 幫你處理的檔案
+
+    const [results] = await db.query(
+      `SELECT MAX(sort) AS sort FROM file_image WHERE file_list_id=?`,
+      [file_list_id]
+    );
+
+    let sort = results[0].sort ? results[0].sort + 1 : 1;
 
     let imagePath = null;
 
     if (file) {
+      const sort_str = sort.toString().padStart(3, "0");
       // 新檔名
-      const newFileName = `img${id}.png`;
+      const newFileName = `img${file_list_id}_${sort_str}.png`;
       const destPath = path.join(__dirname, "public", "images", newFileName);
 
       // 確保資料夾存在
@@ -411,23 +410,25 @@ app.put("/edit", upload.single("image"), async (req, res) => {
     }
 
     // 更新資料庫
-    await new Promise((resolve, reject) => {
-      const updateQuery = `
-        UPDATE file_list
-        SET name = ?, prompt = ?, updated_at = ?, image = ?
-        WHERE id = ?
+    const u_sql = `
+        INSERT INTO file_image
+        (file_list_id, image, sort, created_at, updated_at)
+        VALUES (?,?,?,?,?)
       `;
-      db.query(
-        updateQuery,
-        [name, prompt, new Date(), imagePath, id],
-        (err, result) => {
-          if (err) reject(err);
-          else resolve(result);
-        }
-      );
-    });
+    await db.query(u_sql, [
+      file_list_id,
+      imagePath,
+      sort,
+      new Date(),
+      new Date(),
+    ]);
 
-    return res.json({ success: true, image: imagePath, id: id });
+    return res.json({
+      success: true,
+      image: imagePath,
+      id: file_list_id,
+      result: results,
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, error: err.message });

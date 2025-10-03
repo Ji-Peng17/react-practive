@@ -6,7 +6,7 @@ CREATE TABLE
         `class` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
         `origin_path` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
         `file_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-        `path_check` bit (1) DEFAULT b '1',
+        `path_check` bit (1) DEFAULT '1',
         `target_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
         `target_check` bit (1) DEFAULT NULL,
         `image` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
